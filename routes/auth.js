@@ -5,7 +5,7 @@ import requireAuth from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 router.get("/me", requireAuth, (req, res) => {
-    res.json({ message: "Protected route accessed!", user: req.user });
+    res.json({ user: req.user });
 });
 
 router.post("/register", register);

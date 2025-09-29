@@ -1,15 +1,30 @@
 import { body, validationResult } from 'express-validator';
 
-export const transactionValidationRules = [
+export const transactionValidationRules = [  // TODO: adjust to the Decimal128 changes
+    body("merchant.name")
+        .optional({ nullable: true })
+        .isString()
+        .withMessage("Merchant name must be a string"),
+
+    body("merchant.location")
+        .optional({ nullable: true })
+        .isString()
+        .withMessage("Merchant location must be a string"),
+
     body("type")
-        .isIn(["income", "expense"])
-        .withMessage("Type must be either income or expense"),
+        .isIn(["transfer", "card_payment", "deposit", "withdrawal"])
+        .withMessage("Type must be transfer, card payment, deposit or withdrawal"),
     
     body("amount")
         .isNumeric()
         .withMessage("Amount must be a number")
         .custom((val) => val > 0)
         .withMessage("Amount must be greater than 0"),
+
+    body("currency")
+        .optional()
+        .isIn(["EUR", "BGN", "USD"])
+        .withMessage("Currency must be EUR, BGN or USD"),
 
     body("category")
         .optional()
@@ -21,11 +36,11 @@ export const transactionValidationRules = [
         .isString()
         .withMessage("Note must be a string"),
 
-    body("date")
+    body("completedAt")
         .optional()
         .isISO8601()
         .toDate()
-        .withMessage("Date must be a valid ISO date")
+        .withMessage("CompletedAt must be a valid ISO date"),
 ];
 
 export const validate = (req, res, next) => {
@@ -35,4 +50,4 @@ export const validate = (req, res, next) => {
     }
 
     next();
-}
+};

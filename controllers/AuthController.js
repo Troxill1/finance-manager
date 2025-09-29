@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 const JWT_SECRET = process.env.JWT_SECRET || 'ZqX8V8NpA9dJw4RmT2YpUqGt9X7sAq2F';
 
 export const register = async (req, res) => {
-    const { username, email, password } = req.body;
+    const { name, email, password, city, address } = req.body;
     try {
         const userExists = await User.findOne({ email });
         if (userExists) {
@@ -13,10 +13,9 @@ export const register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 12);
-        const newUser = await User.create({ username, email, password: hashedPassword });
+        const newUser = await User.create({ name, email, password: hashedPassword, city, address });
 
         res.status(201).json({ message: "User registered", user: newUser });
-
     } catch (error) {
         res.status(500).json({ message: "Server error", error: error.message });
     }
