@@ -4,7 +4,6 @@ export const toDecimal128 = (property) => {
     return mongoose.Types.Decimal128.fromString(property.toString());
 };
 
-// for use in models
 const Decimal128ToString = (obj) => {
     if (obj && typeof obj === 'object') {
         for (const key of Object.keys(obj)) {
@@ -21,6 +20,19 @@ const Decimal128ToString = (obj) => {
     }
 
     return obj;
-}
+};
 
-export default Decimal128ToString;
+// for use in models
+const transformDoc = (schema) => {
+    // Used when returning an object to the front-end (for display)
+    schema.set("toJSON", {
+        transform: (doc, ret) => Decimal128ToString(ret)
+    });
+
+    // Used when returning an object to the back-end (for arithmetic)
+    schema.set("toObject", {
+        transform: (doc, ret) => Decimal128ToString(ret)
+    });
+};
+
+export default transformDoc;

@@ -17,7 +17,7 @@ export const register = async (req, res) => {
 
         res.status(201).json({ message: "User registered", user: newUser });
     } catch (error) {
-        res.status(500).json({ message: "Server error", error: error.message });
+        res.status(500).json({ message: "Failed to register", error: error.message });
     }
 };
 
@@ -37,6 +37,18 @@ export const login = async (req, res) => {
         const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '2h' });
         res.json({ message: "Successful login", token, user });
     } catch (error) {
-        res.status(500).json({ message: "Server error", error: error.message });
+        res.status(500).json({ message: "Failed to login", error: error.message });
+    }
+};
+
+export const getMe = async (req, res) => {
+    // the user object in the request provides only ID
+    const userId = req.user.id;
+    try {
+        const user = await User.findById(userId);
+        const { email, name, address, city } = user;
+        res.json({ email, name, address, city });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to get current user", error: error.message });
     }
 };

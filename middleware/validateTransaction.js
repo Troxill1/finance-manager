@@ -1,6 +1,6 @@
 import { body, validationResult } from 'express-validator';
 
-export const transactionValidationRules = [  // TODO: adjust to the Decimal128 changes
+export const transactionValidationRules = [
     body("merchant.name")
         .optional({ nullable: true })
         .isString()

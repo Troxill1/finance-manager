@@ -19,7 +19,7 @@ const getAccount = async (accountId, accountType, session) => {
     return account.toObject();
 };
 
-export const createTransaction = async (req, res) => {  // TODO: test transfer
+export const createTransaction = async (req, res) => {
     const session = await Transaction.startSession();
     session.startTransaction();
 
@@ -39,22 +39,15 @@ export const createTransaction = async (req, res) => {  // TODO: test transfer
         }
 
         let fromAccount, toAccount, fee;
+        if (toAccountId) {
+            toAccount = await getAccount(toAccountId, "Destination", session);
+        }
+
         if (fromAccountId) {
             fromAccount = await getAccount(fromAccountId, "Source", session);
             let balance = new Decimal(fromAccount.balance);
 
-            fee = new Decimal(amount.mul(0.045));
-            const total = new Decimal(amount.plus(fee));
-            
-            if (balance.lessThan(total)) {
-                if (balance.lessThan(amount)) {
-                    throw { message: "Insufficient funds", code: 400 };
-                }
-
-                throw { message: "Insufficient funds due to tax", code: 400 };
-            }
-  
-            let convertedAmount = new Decimal(total), rate = new Decimal(1.00);
+            let convertedAmount = amount, rate = new Decimal(1.00);
             const fromCurrency = fromAccount.currency;
             baseTransaction.currency = toAccountId ? toAccount.currency : fromCurrency;
             
@@ -64,26 +57,32 @@ export const createTransaction = async (req, res) => {  // TODO: test transfer
                 convertedAmount = convertedAmount.mul(rate);
             }
 
+            if (balance.lessThan(convertedAmount)) {
+                throw { message: "Insufficient funds", code: 400 };
+            }
+
+            fee = new Decimal(amount.mul(0.045));  // TODO: add fee to the bank's account
             baseTransaction.fromAccountId = fromAccountId;
-            baseTransaction.convertedAmount = toDecimal128(convertedAmount);
+            baseTransaction.convertedAmount = convertedAmount;
             baseTransaction.conversionRate = toDecimal128(rate);
             baseTransaction.fee = toDecimal128(fee);
             
-            balance = balance.minus(convertedAmount);
+            balance = balance.minus(convertedAmount).minus(fee);  // TODO: should it be converted or not with a different currency?
             fromAccount.balance = toDecimal128(balance);
             await Account.findByIdAndUpdate(fromAccountId, fromAccount, { new: true }).session(session);
         }
 
         if (toAccountId) {
-            toAccount = await getAccount(toAccountId, "Destination", session);
             let balance = new Decimal(toAccount.balance);
 
             if (type === "deposit") {
                 fee = new Decimal(amount.mul(0.03));
                 balance = balance.plus(amount).minus(fee);
             } else {  // type === "transfer"
+                const { convertedAmount } = baseTransaction;
                 // convertedAmount is equal to amount if there is no conversion
-                balance = balance.plus(baseTransaction.convertedAmount);
+                balance = balance.plus(convertedAmount);
+                baseTransaction.convertedAmount = toDecimal128(convertedAmount);
             }
 
             baseTransaction = { ...baseTransaction, toAccountId, fee };
@@ -120,6 +119,9 @@ export const createTransaction = async (req, res) => {  // TODO: test transfer
         await session.abortTransaction();
         session.endSession();
         
+        // This helps explain why a transaction failed too early
+        res.status(500).json({ message: error.message });
+
         baseTransaction.status = "failed";
         await Transaction.create(baseTransaction);
 
@@ -183,8 +185,7 @@ export const reverseTransaction = async (req, res) => {
         const convertedAmount = new Decimal(toReverse.convertedAmount);
 
         if (fromAccountId) {
-            let fromAccount = await Account.findById(fromAccountId).session(session);
-            fromAccount = fromAccount.toObject();
+            let fromAccount = await getAccount(fromAccountId, "Source", session);
 
             let balance = new Decimal(fromAccount.balance);
             balance = balance.plus(amount);
@@ -193,10 +194,9 @@ export const reverseTransaction = async (req, res) => {
         }
 
         if (toAccountId) {
-            let toAccount = await Account.findById(toAccountId).session(session);
-            tAccount = toAccount.toObject();
+            let toAccount = await getAccount(toAccountId, "Destination", session);
+            
             let balance = new Decimal(toAccount.balance);
-
             if (balance.lessThan(convertedAmount)) {
                 throw { message: "Insufficient funds to reverse", code: 400 };
             }

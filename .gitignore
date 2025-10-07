@@ -1,2 +1,6 @@
 .env
 node_modules/
+tests/
+*.test.js
+babel.config.js
+jest.config.js

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const cardSchema = new mongoose.Schema({
-    accountId: { type: mongoose.Schema.ObjectId, ref: "Account", required: true },
+    accountId: { type: mongoose.Schema.Types.ObjectId, ref: "Account", required: true },
     network: { type: String, enum: ["Visa", "Mastercard"], required: true },
     number: { type: String, required: true },
     numberDisplay: { type: String, required: true },  // last 4 digits of number

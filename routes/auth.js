@@ -1,13 +1,10 @@
 import express from 'express';
-import { register, login } from '../controllers/AuthController.js';
+import { register, login, getMe } from '../controllers/AuthController.js';
 import requireAuth from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.get("/me", requireAuth, (req, res) => {
-    res.json({ user: req.user });
-});
-
+router.get("/me", requireAuth, getMe);
 router.post("/register", register);
 router.post("/login", login);
 
