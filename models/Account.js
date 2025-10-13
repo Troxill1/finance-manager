@@ -7,7 +7,7 @@ const { Decimal128, ObjectId } = Schema.Types;
 const savingsSchema = new Schema({
     interestRate: Decimal128,
     withdrawalLimit: Number,
-    withdrawalCount: Number,  // TODO: reset monthly
+    withdrawalCount: Number,
 }, { _id: false });
 
 const accountSchema = new Schema({

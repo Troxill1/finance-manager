@@ -47,27 +47,29 @@ export const createTransaction = async (req, res) => {
             fromAccount = await getAccount(fromAccountId, "Source", session);
             let balance = new Decimal(fromAccount.balance);
 
+            fee = new Decimal(amount.mul(0.045));  // TODO: add fee to the bank's account
+            if (balance.lessThan(amount.plus(fee))) {
+                throw { message: "Insufficient funds", code: 400 };
+            }
+
             let convertedAmount = amount, rate = new Decimal(1.00);
             const fromCurrency = fromAccount.currency;
             baseTransaction.currency = toAccountId ? toAccount.currency : fromCurrency;
             
-            if (baseTransaction.currency !== fromCurrency) {  // for transfers
+            const currencyDiffers = baseTransaction.currency !== fromCurrency;
+            if (currencyDiffers) {  // for transfers
                 baseTransaction.fromCurrency = fromCurrency;
                 rate = new Decimal(RATES[fromCurrency][baseTransaction.currency]);
                 convertedAmount = convertedAmount.mul(rate);
             }
 
-            if (balance.lessThan(convertedAmount)) {
-                throw { message: "Insufficient funds", code: 400 };
-            }
-
-            fee = new Decimal(amount.mul(0.045));  // TODO: add fee to the bank's account
             baseTransaction.fromAccountId = fromAccountId;
             baseTransaction.convertedAmount = convertedAmount;
             baseTransaction.conversionRate = toDecimal128(rate);
             baseTransaction.fee = toDecimal128(fee);
             
-            balance = balance.minus(convertedAmount).minus(fee);  // TODO: should it be converted or not with a different currency?
+            const amountToRemove = currencyDiffers ? amount : convertedAmount;
+            balance = balance.minus(amountToRemove).minus(fee);
             fromAccount.balance = toDecimal128(balance);
             await Account.findByIdAndUpdate(fromAccountId, fromAccount, { new: true }).session(session);
         }
