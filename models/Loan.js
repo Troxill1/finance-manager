@@ -9,9 +9,10 @@ const loanSchema = new mongoose.Schema({
     principal: { type: Decimal128, required: true },  // loaned amount
     remainingLoan: { type: Decimal128, required: true },
     interestRate: { type: Decimal128, required: true },
+    period: { type: Number, required: true },  // in months
     maturityDate: { type: Date, required: true },
-    status: { type: String, enum: ["active", "closed", "defaulted"] },
-});
+    status: { type: String, enum: ["active", "closed", "defaulted"], required: true },
+}, { timestamps: true });
 
 transformDoc(loanSchema);
 

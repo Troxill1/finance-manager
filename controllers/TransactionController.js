@@ -1,5 +1,7 @@
 import Transaction from "../models/Transaction.js";
 import Account from "../models/Account.js";
+import Loan from "../models/Loan.js";
+import Emi from "../models/Emi.js";
 import Decimal from "decimal.js";
 import { toDecimal128 } from "../utils/transformDecimal128.js";
 
@@ -78,8 +80,49 @@ export const createTransaction = async (req, res) => {
             let balance = new Decimal(toAccount.balance);
 
             if (type === "deposit") {
-                fee = new Decimal(amount.mul(0.03));
-                balance = balance.plus(amount).minus(fee);
+                fee = new Decimal(amount.mul(0.03));  // TODO: add fee to the bank's account
+                balance = balance.plus(amount);
+
+                if (toAccount.type !== "loan") {
+                    balance = balance.minus(fee);
+                } else {
+                    const loan = await Loan.findOne({ accountId: toAccountId }).session(session);
+                    if (loan.status !== "active") {
+                        throw { message: "Loan is not active", code: 400 };
+                    }
+
+                    const emiId = loan.installments.at(-1);
+                    const emi = await Emi.findById(emiId).session(session);
+                    const emiAmount = new Decimal(emi.amount.toString());
+                    const penalty = new Decimal(emi?.penalty.toString() || 0);
+
+                    let newStatus;
+                    if (emi.status === "pending") {
+                        newStatus = "paid";
+                    } else if (emi.status === "overdue") {
+                        newStatus = "paid_late";
+                    } else {
+                        throw { message: "EMI is already paid", code: 400 };
+                    }
+
+                    const total = emiAmount.plus(fee).plus(penalty);
+                    if (amount.lessThan(total)) {
+                        throw { message: "Pay the full EMI including fees and any penalty", code: 400 };
+                    }
+                    
+                    emi.status = newStatus;
+                    await emi.save({ session });
+
+                    const remainingLoan = new Decimal(loan.remainingLoan.ToString());
+                    remainingLoan = balance.mul(-1);
+                    loan.remainingLoan = toDecimal128(remainingLoan);
+                    await loan.save({ session });
+
+                    if (remainingLoan.greaterThanOrEqualTo(0)) {
+                        loan.status = "closed";
+                        await loan.save({ session });
+                    }
+                }
             } else {  // type === "transfer"
                 const { convertedAmount } = baseTransaction;
                 // convertedAmount is equal to amount if there is no conversion

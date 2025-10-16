@@ -1,30 +1,43 @@
 import Account from "../models/Account.js";
 import Card from "../models/Card.js";
 import Loan from "../models/Loan.js";
-import Emi from "../models/Emi.js";
-import { generateIban, calculateInterestRate, calculateEMI } from "../utils/accountGenerator.js";
+import { generateIban, calculateInterestRate, calculateEmi } from "../utils/accountGenerator.js";
 import { getCardNumber, generateCVV, generateExpiryDate } from "../utils/cardGenerator.js";
 import Decimal from "decimal.js";
 import { toDecimal128 } from "../utils/transformDecimal128.js";
 
+const fetchAccounts = async (userId) => {
+    const fetchedAccounts = await Account.find({ userId });
+    if (!fetchedAccounts) {
+        return res.status(404).json({ message: "No accounts found "});
+    }
+
+    const loanAccount = fetchedAccounts.find(a => a.type === "loan");
+    let loan = null;
+    if (loanAccount) {
+        loan = (await Loan.findOne({ accountId: loanAccount._id })).toObject();
+    }
+
+    const accounts = await Promise.all(
+        fetchedAccounts.map(async (a) => {
+            const { userId, createdAt, updatedAt, __v, ...rest } = a.toObject();
+
+            if (loan) {
+                const { accountId, createdAt, updatedAt, __v, ...loanDetails } = loan;
+                return { ...rest, loanDetails };
+            }
+                
+            return { ...rest };
+        })
+    );
+
+    return accounts;
+};
+
 export const getAccounts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const fetchedAccounts = await Account.find({ userId });
-        if (!fetchedAccounts) {
-            return res.status(404).json({ message: "No accounts found "});
-        }
-
-        const loanAccounts = fetchedAccounts.filter(a => a.type === "loan").map(a => a._id);
-        const loans = (await Loan.find({ accountId: { $in: loanAccounts } })).map(l => l.toObject());
-
-        const accounts = await Promise.all(
-            fetchedAccounts.map(async (a) => {
-                const { userId, createdAt, updatedAt, __v, ...rest } = a.toObject();
-                const loanDetails = loans.find(l => l.accountId.equals(a._id)) || null;
-                return { ...rest, loanDetails };
-            })
-        );
+        const accounts = await fetchAccounts(userId);
         
         res.json(accounts);
     } catch (error) {
@@ -33,12 +46,21 @@ export const getAccounts = async (req, res) => {
 };
 
 export const createAccount = async (req, res) => {
+    const session = await Account.startSession();
+    session.startTransaction();
+
     try {
         const { type, currency, network, nickname, loanDetails } = req.body;
         const countryCode = currency.slice(0, 2);
         const userId = req.user.id;
 
-        const nicknameExists = await Account.exists({ nickname, userId });
+        const userAccounts = await fetchAccounts(userId);
+        const accountTypes = userAccounts.map(a => a.type);
+        if (accountTypes.includes(type)) {
+            return res.status(400).json({ message: `You already have a ${type} account` });
+        }
+
+        const nicknameExists = await Account.exists({ nickname, userId }).session(session);
         if (nicknameExists) {
             return res.status(400).json({ message: "Account nickname already exists" });
         }
@@ -46,7 +68,7 @@ export const createAccount = async (req, res) => {
         let iban, ibanExists;
         do {
            iban = generateIban(countryCode);
-           ibanExists = await Account.exists({ iban });
+           ibanExists = await Account.exists({ iban }).session(session);
         } while (ibanExists)
         
         const balance = toDecimal128(0.00);
@@ -68,35 +90,28 @@ export const createAccount = async (req, res) => {
             };
         }
 
-        const account = await Account.create(baseAccount);
+        const account = await Account.create(baseAccount).session(session);
 
         if (type === "loan") {
             const principal = new Decimal(loanDetails.loanAmount);
             const loanPeriod = new Decimal(loanDetails.loanPeriod);
             
-            const interestRate = await calculateInterestRate(principal);
-            const EMI = await calculateEMI(interestRate, loanPeriod, principal);
-            const oneMonth = 30 * 24 * 60 * 60 * 1000;
-            const now = Date.now();
+            const interestRate = calculateInterestRate(principal);
+            const emiAmount = calculateEmi(interestRate, loanPeriod, principal);
 
             loanDetails.accountId = account._id;
             loanDetails.principal = toDecimal128(principal);
-            loanDetails.remainingLoan = toDecimal128(EMI.mul(loanPeriod).mul(-1));
+            loanDetails.remainingLoan = toDecimal128(emiAmount.mul(loanPeriod).mul(-1));
             loanDetails.interestRate = toDecimal128(interestRate);
-            loanDetails.maturityDate = new Date(now + loanPeriod * oneMonth);
+            loanDetails.period = loanPeriod;
             loanDetails.status = "active";
-            const loan = await Loan.create(loanDetails);
-
-            const loanId = loan._id;
-            const amount = toDecimal128(EMI);
-            const dueDate = new Date(now + oneMonth);
-            await Emi.create({ loanId, amount, dueDate, status: "pending" });
+            await Loan.create(loanDetails).session(session);
         }
 
-        // TODO: send card number and CVV to email
+        // TODO: send one time link via email displaying the card number and CVV
         const { cardNumber, hashedCardNumber, cardNumberDisplay } = await getCardNumber();
         const { CVV, hashedCVV } = await generateCVV();
-        const expiryDate = await generateExpiryDate();
+        const expiryDate = generateExpiryDate();
 
         await Card.create({
             accountId: account._id,
@@ -105,7 +120,7 @@ export const createAccount = async (req, res) => {
             numberDisplay: cardNumberDisplay,
             securityCode: hashedCVV,
             expiryDate
-        });
+        }).session(session);
 
         const card = {
             numberDisplay: cardNumberDisplay,
@@ -115,6 +130,9 @@ export const createAccount = async (req, res) => {
 
         res.status(201).json({ account, card, message: "Created successfully" });
     } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+
         res.status(500).json({ message: "Failed to create account", error: error.message });
     }
 };

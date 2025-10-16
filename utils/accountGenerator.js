@@ -16,7 +16,7 @@ export const calculateInterestRate = (amount) => {
     }
 };
 
-export const calculateEMI = (rate, period, amount) => {  // Based on the Reducing Balance Method
+export const calculateEmi = (rate, period, amount) => {  // Based on the Reducing Balance Method
     const monthlyRate = rate / 12;
     const variable = (1 + monthlyRate) ** period;
     const emi = amount * monthlyRate * variable / (variable - 1);

@@ -7,14 +7,6 @@ import Decimal from "decimal.js";
 import { toDecimal128 } from "../utils/transformDecimal128.js";
 import email from "../utils/mailer.js";
 
-const getInfo = async (loanId) => {
-    const loan = await Loan.findById(loanId);
-    const account = await Account.findById(loan.accountId).lean();
-    const user = await User.findById(account.userId);
-
-    return { loan, user };
-};
-
 // Checks if "pending" EMIs are overdue and if so applies a penalty and notifies the user
 // Runs once every day
 cron.schedule("0 0 * * *", async () => {
@@ -34,7 +26,9 @@ cron.schedule("0 0 * * *", async () => {
 
             await emi.save();
 
-            const { loan, user } = getInfo(emi.loanId);
+            const loan = await Loan.findById(emi.loanId);
+            const account = await Account.findById(loan.accountId).lean();
+            const user = await User.findById(account.userId);
 
             await email({
                 to: user.email,
@@ -55,7 +49,7 @@ cron.schedule("0 0 * * *", async () => {
             });
 
             if (overdueCount >= 3) {
-                loan.status = "defaulted";  // TODO: notify user in app; update controller logic
+                loan.status = "defaulted";  // TODO: notify user in app
                 await loan.save();
 
                 await email({
@@ -69,6 +63,6 @@ cron.schedule("0 0 * * *", async () => {
         }
     } catch (error) {
         // TODO: handle correctly (add error to DB and resolve in admin panel)
-        console.error("EMI cron job failed: ", error.message);
+        console.error("EMI status checker cron job failed: ", error.message);
     }
 });
